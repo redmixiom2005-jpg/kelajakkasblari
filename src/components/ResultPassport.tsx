@@ -19,6 +19,8 @@ import {
 import { TestResult, Language, Career } from '../types';
 import { translations } from '../i18n';
 
+import { askAiCounselor } from '../services/assessmentService';
+
 interface ResultPassportProps {
   result: TestResult;
   language: Language;
@@ -61,16 +63,23 @@ export const ResultPassport: React.FC<ResultPassportProps> = ({
           customQuestion: customQuestion.trim()
         })
       });
-      const data = await res.json();
-      if (data.success && data.report) {
-        setAiAnalysisText(data.report.analysisText);
-        if (data.report.strategicSteps) {
-          setStrategicSteps(data.report.strategicSteps);
+      const contentType = res.headers.get('content-type');
+      if (res.ok && contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success && data.report) {
+          setAiAnalysisText(data.report.analysisText);
+          if (data.report.strategicSteps) {
+            setStrategicSteps(data.report.strategicSteps);
+          }
+          setCustomQuestion('');
+          return;
         }
-        setCustomQuestion('');
       }
+      throw new Error('Fallback to local counselor');
     } catch (err) {
-      console.error('Failed to query AI:', err);
+      const fallbackAns = await askAiCounselor(result, customQuestion.trim());
+      setAiAnalysisText(prev => prev + '\n\n---\n**Qo‘shimcha tahlil:**\n' + fallbackAns);
+      setCustomQuestion('');
     } finally {
       setAiThinkingLoading(false);
     }

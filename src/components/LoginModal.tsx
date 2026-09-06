@@ -34,17 +34,53 @@ export const LoginModal: React.FC<LoginModalProps> = ({ language, onClose, onLog
         body: JSON.stringify({ username: username.trim(), password: password.trim() })
       });
 
-      const data = await res.json();
-      if (data.success && data.token) {
-        localStorage.setItem('kasbim_token', data.token);
-        localStorage.setItem('kasbim_admin_user', JSON.stringify(data.user));
-        onLoginSuccess(data.user, data.token);
+      const contentType = res.headers.get('content-type');
+      if (res.ok && contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success && data.token) {
+          localStorage.setItem('kasbim_token', data.token);
+          localStorage.setItem('kasbim_admin_user', JSON.stringify(data.user));
+          onLoginSuccess(data.user, data.token);
+          onClose();
+          return;
+        } else {
+          setErrorMsg(data.error || 'Login yoki parol noto‘g‘ri');
+          return;
+        }
+      }
+      throw new Error('Static/offline fallback');
+    } catch (err: any) {
+      // Offline / Static deployment verification for 41-maktab demo accounts
+      const u = username.trim().toLowerCase();
+      const p = password.trim();
+
+      if (u === 'admin' && p === 'admin41!') {
+        const adminUser = {
+          id: 'usr-admin-local',
+          username: 'admin',
+          fullName: 'Maktab Ma\'muri (Admin)',
+          role: 'ADMIN'
+        };
+        const token = 'local-admin-token-' + Date.now();
+        localStorage.setItem('kasbim_token', token);
+        localStorage.setItem('kasbim_admin_user', JSON.stringify(adminUser));
+        onLoginSuccess(adminUser, token);
+        onClose();
+      } else if (u === 'pedagog' && p === 'ustoz41!') {
+        const teacherUser = {
+          id: 'usr-teacher-local',
+          username: 'pedagog',
+          fullName: 'Maktab Amaliyotchi Psixologi',
+          role: 'TEACHER'
+        };
+        const token = 'local-teacher-token-' + Date.now();
+        localStorage.setItem('kasbim_token', token);
+        localStorage.setItem('kasbim_admin_user', JSON.stringify(teacherUser));
+        onLoginSuccess(teacherUser, token);
         onClose();
       } else {
-        setErrorMsg(data.error || 'Login yoki parol noto‘g‘ri');
+        setErrorMsg('Login yoki parol noto‘g‘ri. Namuna: admin / admin41! yoki pedagog / ustoz41!');
       }
-    } catch (err: any) {
-      setErrorMsg('Serverga ulanishda xatolik yuz berdi');
     } finally {
       setLoading(false);
     }

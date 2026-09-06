@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { Question, Language, TestResult } from '../types';
 import { translations } from '../i18n';
+import { QUESTIONS } from '../data/questions';
+import { submitAssessmentClient } from '../services/assessmentService';
 
 interface TestStepperProps {
   language: Language;
@@ -26,8 +28,9 @@ export const TestStepper: React.FC<TestStepperProps> = ({ language, onTestComple
   const t = translations[language];
 
   const [step, setStep] = useState<'profile' | 'quiz' | 'submitting'>('profile');
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [loadingQuestions, setLoadingQuestions] = useState(true);
+  // Initialize with QUESTIONS directly so Vercel or offline never hangs on "Savollar yuklanmoqda..."
+  const [questions, setQuestions] = useState<Question[]>(QUESTIONS);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
 
   // Student Profile State
   const [fullName, setFullName] = useState('');
@@ -54,16 +57,17 @@ export const TestStepper: React.FC<TestStepperProps> = ({ language, onTestComple
   useEffect(() => {
     async function fetchQuestions() {
       try {
-        setLoadingQuestions(true);
         const res = await fetch('/api/questions');
-        const data = await res.json();
-        if (data.success && data.questions) {
-          setQuestions(data.questions);
+        const contentType = res.headers.get('content-type');
+        if (res.ok && contentType && contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.questions) && data.questions.length > 0) {
+            setQuestions(data.questions);
+          }
         }
       } catch (e) {
-        console.error('Failed to load questions:', e);
-      } finally {
-        setLoadingQuestions(false);
+        // Questions are already pre-loaded via QUESTIONS
+        console.debug('Using pre-bundled questions');
       }
     }
     fetchQuestions();
@@ -149,39 +153,25 @@ export const TestStepper: React.FC<TestStepperProps> = ({ language, onTestComple
     try {
       const answersPayload = Object.entries(answers).map(([questionId, score]) => ({
         questionId,
-        score
+        score: Number(score)
       }));
 
-      const res = await fetch('/api/test/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentData: {
-            fullName,
-            grade,
-            gender,
-            phone
-          },
-          answers: answersPayload
-        })
+      const result = await submitAssessmentClient(
+        { fullName, grade, gender, phone },
+        answersPayload
+      );
+
+      // Clear saved test
+      localStorage.removeItem('kasbim_test_backup');
+
+      // Confetti celebration
+      confetti({
+        particleCount: 120,
+        spread: 70,
+        origin: { y: 0.6 }
       });
 
-      const data = await res.json();
-      if (data.success && data.result) {
-        // Clear saved test
-        localStorage.removeItem('kasbim_test_backup');
-
-        // Confetti celebration
-        confetti({
-          particleCount: 120,
-          spread: 70,
-          origin: { y: 0.6 }
-        });
-
-        onTestComplete(data.result);
-      } else {
-        throw new Error(data.error || 'Natijalarni hisoblashda xatolik');
-      }
+      onTestComplete(result);
     } catch (err: any) {
       console.error('Submission error:', err);
       setErrorMsg(err.message || 'Xatolik yuz berdi. Iltimos qaytadan urinib ko‘ring.');

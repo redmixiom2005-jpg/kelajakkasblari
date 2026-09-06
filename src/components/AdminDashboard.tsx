@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { TestResult, Language } from '../types';
 import { translations } from '../i18n';
+import { getLocalResults } from '../services/assessmentService';
 
 interface AdminDashboardProps {
   language: Language;
@@ -49,13 +50,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           })
         ]);
 
-        const statsData = await statsRes.json();
-        const studentsData = await studentsRes.json();
+        const statsType = statsRes.headers.get('content-type');
+        const studentsType = studentsRes.headers.get('content-type');
 
-        if (statsData.success) setStats(statsData);
-        if (studentsData.success) setStudentsList(studentsData.results);
+        if (statsRes.ok && statsType && statsType.includes('application/json') &&
+            studentsRes.ok && studentsType && studentsType.includes('application/json')) {
+          const statsData = await statsRes.json();
+          const studentsData = await studentsRes.json();
+
+          if (statsData.success) setStats(statsData);
+          if (studentsData.success && Array.isArray(studentsData.results)) {
+            setStudentsList(studentsData.results);
+            return;
+          }
+        }
+        throw new Error('Fallback to local assessment storage');
       } catch (err) {
-        console.error('Failed to load admin stats:', err);
+        // Build fallback statistics from local tests
+        const local = getLocalResults();
+        setStudentsList(local);
+
+        const gradeMap: Record<string, number> = {};
+        const careerMap: Record<string, number> = {};
+        let pressureSum = 0;
+
+        local.forEach(r => {
+          const g = r.student?.grade || '9-A';
+          gradeMap[g] = (gradeMap[g] || 0) + 1;
+          const topC = r.matchedCareers?.[0]?.career?.nameUz || 'Boshqa';
+          careerMap[topC] = (careerMap[topC] || 0) + 1;
+          pressureSum += r.pressureIndex || 0;
+        });
+
+        const topCareers = Object.entries(careerMap)
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5);
+
+        setStats({
+          success: true,
+          totalAssessments: local.length,
+          avgPressureIndex: local.length > 0 ? Math.round(pressureSum / local.length) : 24,
+          gradeBreakdown: gradeMap,
+          topMatchedCareers: topCareers
+        });
       } finally {
         setLoading(false);
       }
@@ -64,7 +102,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [token]);
 
   const handleExportCsv = () => {
-    window.open('/api/admin/export', '_blank');
+    if (studentsList.length > 0) {
+      const headers = ['Ism-familiya', 'Sinf', 'Jinsi', 'Telefon', 'Sana', 'Asosiy Kasb', 'Moslik %', 'RIASEC Kodi', 'Tashqi Bosim'];
+      const rows = studentsList.map(r => [
+        `"${r.student?.fullName || ''}"`,
+        `"${r.student?.grade || ''}"`,
+        `"${r.student?.gender || ''}"`,
+        `"${r.student?.phone || ''}"`,
+        `"${r.createdAt ? new Date(r.createdAt).toLocaleDateString('uz-UZ') : ''}"`,
+        `"${r.matchedCareers?.[0]?.career?.nameUz || ''}"`,
+        `"${r.matchedCareers?.[0]?.matchPercentage || ''}%"`,
+        `"${r.riasec?.primaryCode || ''}"`,
+        `"${r.pressureIndex}%"`
+      ]);
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `41_maktab_diagnostika_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      window.open('/api/admin/export', '_blank');
+    }
   };
 
   const filteredStudents = studentsList.filter(s => {

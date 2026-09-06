@@ -14,17 +14,19 @@ import {
 } from 'lucide-react';
 import { Career, Language } from '../types';
 import { translations } from '../i18n';
+import { CAREERS } from '../data/careers';
 
 interface CareerAtlasProps {
-  language: Language;
   onSelectCareerToTest?: (career: Career) => void;
+  language: Language;
 }
 
 export const CareerAtlas: React.FC<CareerAtlasProps> = ({ language, onSelectCareerToTest }) => {
   const t = translations[language];
 
-  const [careers, setCareers] = useState<Career[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Initialize immediately with bundled 200+ careers so Vercel / offline never shows 0
+  const [careers, setCareers] = useState<Career[]>(CAREERS);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [activeCareerModal, setActiveCareerModal] = useState<Career | null>(null);
@@ -32,16 +34,17 @@ export const CareerAtlas: React.FC<CareerAtlasProps> = ({ language, onSelectCare
   useEffect(() => {
     async function fetchCareers() {
       try {
-        setLoading(true);
         const res = await fetch('/api/careers');
-        const data = await res.json();
-        if (data.success && data.careers) {
-          setCareers(data.careers);
+        const contentType = res.headers.get('content-type');
+        if (res.ok && contentType && contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.careers) && data.careers.length > 0) {
+            setCareers(data.careers);
+          }
         }
       } catch (err) {
-        console.error('Failed to load careers:', err);
-      } finally {
-        setLoading(false);
+        // Fallback to bundled CAREERS is already active
+        console.debug('Using bundled careers catalog');
       }
     }
     fetchCareers();
