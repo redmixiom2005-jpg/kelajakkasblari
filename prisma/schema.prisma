@@ -1,0 +1,246 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  COUNSELOR
+}
+
+enum Dimension {
+  TECHNOLOGY
+  MEDICAL
+  ENGINEERING
+  SOCIAL
+  CREATIVE
+  BUSINESS
+  NATURE
+  LAW_SECURITY
+}
+
+model User {
+  id           String          @id @default(cuid())
+  name         String
+  email        String          @unique
+  passwordHash String
+  role         Role            @default(COUNSELOR)
+  school       String          @default("41-sonli umumiy o‘rta ta’lim maktabi")
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  notes        CounselorNote[]
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model SchoolClass {
+  id        String    @id @default(cuid())
+  name      String    @unique // e.g. "8-A", "9-B", "11-A"
+  grade     Int       // 1 to 11
+  section   String    // "A", "B", "V", "G"
+  createdAt DateTime  @default(now())
+  students  Student[]
+
+  @@map("school_classes")
+}
+
+model Teacher {
+  id        String    @id @default(cuid())
+  fullName  String
+  subject   String?
+  phone     String?
+  createdAt DateTime  @default(now())
+  students  Student[]
+
+  @@map("teachers")
+}
+
+model Student {
+  id             String          @id @default(cuid())
+  firstName      String
+  lastName       String
+  age            Int
+  school         String          @default("41-sonli umumiy o‘rta ta’lim maktabi")
+  classId        String?
+  schoolClass    SchoolClass?    @relation(fields: [classId], references: [id])
+  className      String          // fallback / direct name like "8-B"
+  teacherId      String?
+  teacher        Teacher?        @relation(fields: [teacherId], references: [id])
+  teacherName    String          // direct teacher name
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  sessions       TestSession[]
+  results        TestResult[]
+  counselorNotes CounselorNote[]
+
+  @@map("students")
+}
+
+model Question {
+  id             String    @id @default(cuid())
+  orderNumber    Int
+  questionUz     String
+  questionKrill  String
+  questionRu     String
+  questionEn     String
+  category       String    @default("GENERAL") // GENERAL, SUBJECT, BEHAVIOR, PRESSURE
+  active         Boolean   @default(true)
+  // Weights for 8 dimensions (0 to 10 scale)
+  weightTech     Float     @default(0)
+  weightMed      Float     @default(0)
+  weightEng      Float     @default(0)
+  weightSoc      Float     @default(0)
+  weightCre      Float     @default(0)
+  weightBus      Float     @default(0)
+  weightNat      Float     @default(0)
+  weightLaw      Float     @default(0)
+  // Subject and trait correlations
+  correlatedSubject String? // e.g. "Informatika", "Matematika", "Biologiya"
+  correlatedTrait   String? // e.g. "Technical thinking", "Problem solving"
+  isPressureCheck   Boolean @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  answers        Answer[]
+
+  @@map("questions")
+}
+
+model Career {
+  id                String       @id @default(cuid())
+  slug              String       @unique
+  nameUz            String
+  nameKrill         String
+  nameRu            String
+  nameEn            String
+  category          String
+  imageUrl          String
+  descriptionUz     String
+  descriptionKrill  String
+  descriptionRu     String
+  descriptionEn     String
+  skills            String[]     // list of required skills
+  subjects          String[]     // recommended school subjects
+  learningPath      Json         // roadmaps: 0-3m, 3-6m, 6-12m, 1-2y
+  educationPath     String       // College / University direction in Uzbekistan
+  futureOutlook     String       // market demand / salary outlook
+  relatedCareers    String[]     // slugs or names of related careers
+  // Dimension profiles (0 to 100)
+  weightTech        Float        @default(0)
+  weightMed         Float        @default(0)
+  weightEng         Float        @default(0)
+  weightSoc         Float        @default(0)
+  weightCre         Float        @default(0)
+  weightBus         Float        @default(0)
+  weightNat         Float        @default(0)
+  weightLaw         Float        @default(0)
+  active            Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  resultsAsTop      TestResult[] @relation("TopCareer")
+
+  @@map("careers")
+}
+
+model TestSession {
+  id          String      @id @default(cuid())
+  studentId   String
+  student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status      String      @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED, ABANDONED
+  startedAt   DateTime    @default(now())
+  completedAt DateTime?
+  answers     Answer[]
+  result      TestResult?
+
+  @@map("test_sessions")
+}
+
+model Answer {
+  id         String      @id @default(cuid())
+  sessionId  String
+  session    TestSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question    @relation(fields: [questionId], references: [id])
+  value      Int         // 1 to 5 scale
+  createdAt  DateTime    @default(now())
+
+  @@unique([sessionId, questionId])
+  @@map("answers")
+}
+
+model TestResult {
+  id                 String      @id @default(cuid())
+  studentId          String
+  student            Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  sessionId          String      @unique
+  session            TestSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  // Normalized dimension scores (0 to 100)
+  technologyScore    Float
+  medicalScore       Float
+  engineeringScore   Float
+  socialScore        Float
+  creativeScore      Float
+  businessScore      Float
+  natureScore        Float
+  lawSecurityScore   Float
+  
+  // Top dominant direction
+  topDimension       String
+  topDimensionScore  Float
+  
+  // Top career matched
+  topCareerId        String
+  topCareer          Career      @relation("TopCareer", fields: [topCareerId], references: [id])
+  topCareerMatchRate Float
+  
+  // Top 5 careers with scores
+  topFiveCareers     Json        // Array of { careerId, name, matchRate, category, imageUrl }
+  
+  // Subject and personal trait breakdowns
+  subjectScores      Json        // Array of { subject, score }
+  personalTraits     Json        // Array of { trait, score }
+  
+  // Confidential counselor indicators
+  pressureIndicator  String?     // "FREE", "CONSULTED", "PRESSURE_DETECTED", "DECLINED"
+  freeTimeChoice     String?     // Student hobby / free-time inclination
+  
+  createdAt          DateTime    @default(now())
+
+  @@map("test_results")
+}
+
+model CounselorNote {
+  id        String   @id @default(cuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  authorName String
+  note      String
+  isPrivate Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("counselor_notes")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String   // "LOGIN", "VIEW_RESULT", "ADD_NOTE", "EXPORT_CSV"
+  details   String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}

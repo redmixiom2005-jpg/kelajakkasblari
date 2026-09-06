@@ -1,0 +1,6 @@
+{
+  "name": "Kasbim — Kelajagim",
+  "description": "Namangan viloyati, Uychi tumani, 41-sonli maktab o‘quvchilarining kasbiy qiziqishlarini aniqlash va yo‘naltirish platformasi",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
